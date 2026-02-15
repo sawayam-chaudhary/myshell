@@ -5,7 +5,7 @@
 - Command parsing : Handle input and arguements
 - Background execution : support for running processes in background
 - Built-in commands : cd and pwd
-- Piping : Support inter-proccess communication, currently only for two processes
+- Piping : Support inter-proccess communication
 - File redirection : Support redirecting input/output from a file
 - Job signal : Basic signal handling for managing jobs 
 
