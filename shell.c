@@ -36,7 +36,7 @@ int main(int argc, char *argv[]){
         if(myargv[0]==NULL){
             continue;
         }
-        if(strcmp(str,"exit")==0){
+        if(strcmp(myargv[0],"exit")==0){
             break;
         }
         
@@ -74,56 +74,79 @@ int main(int argc, char *argv[]){
             background=1;
         }
 
-        int pipe_idx = -1;
+        int cmd_count=1;
         for(int j=0; myargv[j]; j++){
             if(strcmp(myargv[j],"|")==0){
-                pipe_idx =j;
-                break;
-            }
-        }
-        if(pipe_idx != -1){
-            myargv[pipe_idx]=NULL;
-            char **left = myargv;
-            char **right = &myargv[pipe_idx + 1];
-            int fd[2];
-            pipe(fd);
-            pid_t pid1 = fork();
-            if(pid1==0){
-                setpgid(0,0);
+                cmd_count++;
                 
-                dup2(fd[1],STDOUT_FILENO);
-                close(fd[0]);
-                close(fd[1]);
-                signal(SIGINT,SIG_DFL);
-                signal(SIGTSTP,SIG_DFL);
-                execvp(left[0],left);
-                perror("exec");
-                exit(1);
             }
-
-            pid_t pid2=fork();
-            if(pid2==0){
-                setpgid(0,pid1);
-
-                dup2(fd[0],STDIN_FILENO);
-                close(fd[0]);
-                close(fd[1]);
-                signal(SIGINT,SIG_DFL);
-                signal(SIGTSTP,SIG_DFL);
-                execvp(right[0],right);
-                perror("exec");
-                exit(1);
-            }
-            close(fd[0]);
-            close(fd[1]);
-            setpgid(pid1,pid1);
-            setpgid(pid2,pid1);
-            tcsetpgrp(STDIN_FILENO,pid1);
-            waitpid(pid1,NULL,0);
-            waitpid(pid2,NULL,0);
-            tcsetpgrp(STDIN_FILENO,shell_pid);
-            continue;
         }
+        if(cmd_count>1){
+        char *command[cmd_count][20];
+        int cmd_index =0;
+        int arg_index=0;
+        for(int i=0;myargv[i]!=NULL;i++){
+            if(strcmp(myargv[i],"|")==0){
+                command[cmd_index][arg_index] = NULL;
+                cmd_index++;
+                arg_index=0;
+            }else{
+                command[cmd_index][arg_index]= myargv[i];
+                arg_index++;
+            }}
+        command[cmd_index][arg_index]=NULL;
+
+        int pipes[cmd_count-1][2];
+        for(int j=0;j<cmd_count-1;j++){
+            pipe(pipes[j]);
+        }
+
+        pid_t pgid=0;
+        for(int j=0;j<cmd_count;j++){
+            
+            pid_t pid=fork();
+            if(pid==0){
+                if(j==0){
+                    setpgid(0,0);
+                }else setpgid(0,pgid);
+            signal(SIGINT,SIG_DFL);
+            signal(SIGTSTP,SIG_DFL);
+
+            if(j>0){
+                dup2(pipes[j-1][0],STDIN_FILENO);
+            }
+            if(j<cmd_count-1){
+                dup2(pipes[j][1],STDOUT_FILENO);
+            }
+
+            for(int k=0;k<cmd_count-1;k++){
+            close(pipes[k][0]);
+            close(pipes[k][1]);
+                }
+
+            execvp(command[j][0],command[j]);
+            perror("exec");
+            exit(1);
+            }
+            if(j==0){
+                pgid=pid;
+            }
+            setpgid(pid,pgid);
+        }
+
+        for(int j=0;j<cmd_count-1;j++){
+                close(pipes[j][0]);
+                close(pipes[j][1]);
+                }
+       if(!background)
+        tcsetpgrp(STDIN_FILENO,pgid);
+        for(int j=0;j<cmd_count;j++){
+                wait(NULL);
+        }
+        tcsetpgrp(STDIN_FILENO,shell_pid);}
+        continue;
+        }
+
 
         int redir_idx = -1;
        int  redir_type = 0;
@@ -177,9 +200,11 @@ int main(int argc, char *argv[]){
             }
             close(fd);
             setpgid(pid,pid);
+            if(!background){
             tcsetpgrp(STDIN_FILENO,pid);
             waitpid(pid,NULL,0);
             tcsetpgrp(STDIN_FILENO, shell_pid);
+            }
             continue;
         }
 
